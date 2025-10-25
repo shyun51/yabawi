@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>야바위 게임 - 4단계</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    font-family: 'Arial', sans-serif;
+  }
+  
+  .game-container {
+    text-align: center;
+    color: white;
+  }
+  
+  .title {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+  }
+  
+  .stage-info {
+    font-size: 1.3rem;
+    margin-bottom: 1rem;
+  }
+  
+  .rewards {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #ffd700;
+  }
+  
+  .controls {
+    margin-bottom: 2rem;
+  }
+  
+  .btn {
+    background: #ff6b6b;
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    border-radius: 25px;
+    cursor: pointer;
+    margin: 0 10px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  }
+  
+  .btn:hover {
+    background: #ff5252;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  }
+  
+  .btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  .btn.go {
+    background: #4CAF50;
+  }
+  
+  .btn.go:hover {
+    background: #45a049;
+  }
+  
+  .btn.stop {
+    background: #f44336;
+  }
+  
+  .btn.stop:hover {
+    background: #da190b;
+  }
+  
+  canvas {
+    background: rgba(255,255,255,0.1);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+  }
+  
+  .result {
+    font-size: 2rem;
+    margin-top: 1rem;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+  }
+  
+  .instructions {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 15px;
+    border-radius: 10px;
+    color: white;
+    font-size: 0.9rem;
+    max-width: 300px;
+  }
+  
+  /* 깜빡임 효과 CSS */
+  .flash {
+    animation: flash 2s ease-in-out; /* 깜빡임 애니메이션 지속시간: 0.3초 (짧을수록 빠른 깜빡임) */
+  }
+  
+  @keyframes flash {
+    0%, 100% { opacity: 0; }  /* 시작/끝 투명도: 0 (완전 투명) */
+    50% { opacity: 1; }        /* 중간 투명도: 1 (완전 불투명) */
+  }
+  
+  /* 깜빡임 밝기 조절 방법:
+   * 1. 밝은 깜빡임 (현재 설정): 0% → 1 → 0% (어두움 → 밝음 → 어두움)
+   * 2. 어두운 깜빡임: 1 → 0.3 → 1 (밝음 → 어두움 → 밝음)
+   * 3. 부드러운 깜빡임: 0.8 → 0.2 → 0.8
+   * 4. 강한 깜빡임: 0 → 1 → 0 (현재와 동일)
+   */
+</style>
+</head>
+<body>
+<div class="instructions">
+  <h3>야바위 게임 - 4단계</h3>
+  <p><strong>단계별 난이도:</strong></p>
+  <p>1단계: 3컵, 느림 (보상 1)</p>
+  <p>2단계: 3컵, 빠름 (보상 2)</p>
+  <p>3단계: 5컵, 보통 (보상 5)</p>
+  <p>4단계: 5컵, 매우빠름+깜빡임 (보상 7)</p>
+  <p><strong>재시도:</strong></p>
+  <p>1단계: 무한 / 2단계: X</p>
+  <p>3단계: 1회 / 4단계: 2회</p>
+</div>
+
+<div class="game-container">
+  <h1 class="title">야바위 게임</h1>
+  <div class="stage-info">
+    <span id="stageText">단계 1 / 4</span>
+    <span id="retryText" style="margin-left: 20px;"></span>
+  </div>
+  <div class="rewards">총 보상: <span id="totalRewards">0</span></div>
+  
+  <div class="controls">
+    <button class="btn" id="startBtn">게임 시작</button>
+    <button class="btn" id="resetBtn">처음부터</button>
+  </div>
+  
+  <canvas id="canvas" width="900" height="500"></canvas>
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const stageText = document.getElementById("stageText");
+const retryText = document.getElementById("retryText");
+const totalRewardsElement = document.getElementById("totalRewards");
+const resultElement = document.getElementById("result");
+const startBtn = document.getElementById("startBtn");
+const resetBtn = document.getElementById("resetBtn");
+
+let gameState = 'ready'; // ready, mixing, selecting, result, choice, final
+let currentStage = 1;
+let totalRewards = 0;
+let earnedRewards = 0; // 클리어한 단계의 확정 보상 추적
+let selectedCup = -1;
+let ballCupIndex = 0; // 공이 있는 컵의 인덱스 (hasBall 대신 인덱스로 추적)
+let isMixing = false;
+let mixStep = 0;
+let flashInterval = null;
+let isInRetryAttempt = false; // 현재 재시도 시도 중인지 추적
+let showCupNumbers = false; // 컵 번호 표시 여부
+
+// 단계별 설정 - 난이도 조절 방법
+const stageConfig = {
+  // 1단계: 초보자용 (쉬움)
+  1: { 
+    cups: 3,           // 컵 개수: 3개 (적을수록 쉬움)
+    speed: 50,         // 교환 속도: 60프레임 (클수록 느림, 작을수록 빠름)
+    swaps: 4,          // 교환 횟수: 4회 (적을수록 쉬움)
+    retries: Infinity, // 재시도: 무한 (실패해도 계속 시도 가능)
+    reward: 1          // 보상: 1점
+  },
+  
+  // 2단계: 중급자용 (보통)
+  2: { 
+    cups: 3,           // 컵 개수: 3개
+    speed: 30,         // 교환 속도: 30프레임 (1단계보다 2배 빠름)
+    swaps: 6,          // 교환 횟수: 6회 (1단계보다 1.5배 많음)
+    retries: 0,        // 재시도: 불가 (한 번만 기회)
+    reward: 2          // 보상: 2점
+  },
+  
+  // 3단계: 고급자용 (어려움)
+  3: { 
+    cups: 5,           // 컵 개수: 5개 (3개에서 5개로 증가)
+    speed: 25,         // 교환 속도: 40프레임 (2단계보다 약간 느림)
+    swaps: 8,          // 교환 횟수: 8회 (컵이 많아져서 교환도 많아짐)
+    retries: 1,        // 재시도: 1회 (1번 실패 허용)
+    reward: 5          // 보상: 5점
+  },
+  
+  // 4단계: 전문가용 (매우 어려움)
+  4: { 
+    cups: 5,           // 컵 개수: 5개
+    speed: 10,         // 교환 속도: 25프레임 (가장 빠름)
+    swaps: 30,         // 교환 횟수: 10회 (가장 많음)
+    retries: 2,        // 재시도: 2회 (2번 실패 허용)
+    reward: 7,         // 보상: 7점
+    flash: true        // 깜빡임 효과: 활성화 (시각적 방해)
+  }
+};
+
+/* 난이도 조절 가이드:
+ * 
+ * 1. 컵 개수 (cups):
+ *    - 3개: 쉬움 (위치 추적 용이)
+ *    - 5개: 어려움 (위치 추적 어려움)
+ * 
+ * 2. 교환 속도 (speed):
+ *    - 60: 매우 느림 (쉬움)
+ *    - 40: 보통
+ *    - 30: 빠름
+ *    - 25: 매우 빠름 (어려움)
+ *    - 20 이하: 극도로 빠름 (거의 불가능)
+ * 
+ * 3. 교환 횟수 (swaps):
+ *    - 4회: 적음 (쉬움)
+ *    - 6-8회: 보통
+ *    - 10회 이상: 많음 (어려움)
+ * 
+ * 4. 재시도 (retries):
+ *    - Infinity: 무한 (쉬움)
+ *    - 2-3: 제한적 (보통)
+ *    - 1: 1회만 (어려움)
+ *    - 0: 불가 (매우 어려움)
+ * 
+ * 5. 깜빡임 효과 (flash):
+ *    - true: 활성화 (시각적 방해)
+ *    - false: 비활성화 (정상)
+ */
+
+let retriesLeft = stageConfig[1].retries;
+let retriesUsed = 0;
+let previousSwapPair = null; // 이전 교환 쌍 추적하여 중복 방지
+
+// 컵 클래스
+class Cup {
+  constructor(x, y, radius, color, index) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.color = color;
+    this.index = index;
+    this.originalX = x;
+    this.originalY = y;
+    this.isSelected = false;
+  }
+  
+  draw() {
+    // 컵 그림자
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.arc(this.x + 5, this.y + 5, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 컵 본체
+    ctx.fillStyle = this.isSelected ? '#ffeb3b' : this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 컵 테두리
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // 컵 번호 표시 (Alt+M 토글)
+    if (showCupNumbers) {
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((this.index + 1).toString(), this.x, this.y);
+    }
+    
+    if (this.index === ballCupIndex && (gameState === 'ready' || gameState === 'result')) {
+      // 공 그림자
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.arc(this.x + 3, this.y + 3, 18, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 공 본체
+      ctx.fillStyle = '#ff4444';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 20, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 공 하이라이트
+      ctx.fillStyle = '#ff6666';
+      ctx.beginPath();
+      ctx.arc(this.x - 5, this.y - 5, 12, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // 공 반짝임 효과 - 공의 하이라이트
+      // 투명도 조절로 반짝임 강도 조절:
+      // - 0.1: 매우 약한 반짝임 (현재 설정)
+      // - 0.3: 약한 반짝임
+      // - 0.6: 보통 반짝임
+      // - 0.8: 강한 반짝임
+      // - 1.0: 매우 강한 반짝임
+      ctx.fillStyle = 'rgba(255,255,255,0.1)'; // 흰색, 10% 투명도
+      ctx.beginPath();
+      ctx.arc(this.x - 3, this.y - 3, 6, 0, Math.PI * 2); // 반지름 6의 작은 원
+      ctx.fill();
+    }
+  }
+  
+  setPosition(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  
+  contains(x, y) {
+    const dx = x - this.x;
+    const dy = y - this.y;
+    return dx * dx + dy * dy <= this.radius * this.radius;
+  }
+}
+
+let cups = [];
+let swapQueue = []; // 교환 큐 추가 (순차적 교환 관리)
+let activeSwaps = []; // 현재 진행 중인 교환 배열 (여러 쌍 동시 이동)
+
+// 컵 배치 생성
+function createCups(numCups) {
+  cups = [];
+  if (numCups === 3) {
+    // 3개: 가로 배치
+    for (let i = 0; i < 3; i++) {
+      cups.push(new Cup(250 + i * 200, 300, 50, '#4CAF50', i));
+    }
+  } else if (numCups === 5) {
+    // 5개: 오각형 배치 (위 2개, 아래 3개)
+    cups.push(new Cup(300, 200, 50, '#4CAF50', 0));
+    cups.push(new Cup(600, 200, 50, '#4CAF50', 1));
+    cups.push(new Cup(200, 350, 50, '#4CAF50', 2));
+    cups.push(new Cup(450, 350, 50, '#4CAF50', 3));
+    cups.push(new Cup(700, 350, 50, '#4CAF50', 4));
+  }
+}
+
+function initGame() {
+  if (flashInterval) {
+    clearInterval(flashInterval);
+    flashInterval = null;
+    canvas.style.opacity = '1';
+    canvas.classList.remove('flash');
+  }
+  
+  gameState = 'ready';
+  selectedCup = -1;
+  isMixing = false;
+  mixStep = 0;
+  swapQueue = [];
+  activeSwaps = [];
+  previousSwapPair = null;
+  showCupNumbers = false; // 번호 표시 초기화
+  
+  const config = stageConfig[currentStage];
+  createCups(config.cups);
+  
+  ballCupIndex = Math.floor(Math.random() * config.cups);
+  
+  cups.forEach(cup => {
+    cup.isSelected = false;
+  });
+  
+  retriesLeft = config.retries;
+  
+  updateUI();
+  resultElement.textContent = '';
+  startBtn.textContent = '공 섞기 시작';
+  startBtn.disabled = false;
+}
+
+// UI 업데이트
+function updateUI() {
+  stageText.textContent = `단계 ${currentStage} / 4`;
+  totalRewardsElement.textContent = totalRewards;
+  
+  const config = stageConfig[currentStage];
+  if (config.retries === Infinity) {
+    retryText.textContent = '재시도: 무한';
+  } else if (config.retries === 0) {
+    retryText.textContent = '재시도: 불가';
+  } else {
+    retryText.textContent = `재시도: ${retriesLeft}회 남음`;
+  }
+}
+
+function generateSwapQueue(numSwaps, numCups) {
+  const queue = [];
+  let lastPair = previousSwapPair;
+  
+  for (let i = 0; i < numSwaps; i++) {
+    let idx1, idx2;
+    let attempts = 0;
+    
+    do {
+      idx1 = Math.floor(Math.random() * numCups);
+      idx2 = Math.floor(Math.random() * numCups);
+      attempts++;
+      
+    } while ((idx2 === idx1 || 
+             (lastPair && lastPair[0] === idx1 && lastPair[1] === idx2) ||
+             (lastPair && lastPair[0] === idx2 && lastPair[1] === idx1)) && 
+             attempts < 50);
+    
+    queue.push([idx1, idx2]);
+    lastPair = [idx1, idx2];
+  }
+  
+  previousSwapPair = queue[queue.length - 1];
+  return queue;
+}
+
+function mixCups() {
+  if (!isMixing) return;
+  
+  const config = stageConfig[currentStage];
+  const swapDuration = config.speed;
+  
+  // 큐가 비어있고 진행 중인 교환이 없으면 새로 생성
+  if (swapQueue.length === 0 && activeSwaps.length === 0) {
+    swapQueue = generateSwapQueue(config.swaps, config.cups);
+  }
+  
+  // 진행 중인 교환이 2개 미만이고 큐에 남은 교환이 있으면 새 교환 시작
+  // 5개 이상 컵일 때만 2쌍 동시 이동
+  const maxConcurrentSwaps = config.cups >= 5 ? 2 : 1;
+  
+  while (activeSwaps.length < maxConcurrentSwaps && swapQueue.length > 0) {
+    const [idx1, idx2] = swapQueue.shift();
+    
+    // 중복 방지: 이미 교환 중인 컵인지 확인
+    const isUsed = activeSwaps.some(swap => 
+      swap.idx1 === idx1 || swap.idx1 === idx2 ||
+      swap.idx2 === idx1 || swap.idx2 === idx2
+    );
+    
+    if (!isUsed) {
+      activeSwaps.push({
+        idx1,
+        idx2,
+        progress: 0,
+        startX1: cups[idx1].originalX,
+        startY1: cups[idx1].originalY,
+        startX2: cups[idx2].originalX,
+        startY2: cups[idx2].originalY,
+        swapped: false
+      });
+    }
+    // 중복된 교환은 무시 (무한 루프 방지)
+  }
+  
+  // 모든 진행 중인 교환 처리
+  for (let i = activeSwaps.length - 1; i >= 0; i--) {
+    const swap = activeSwaps[i];
+    swap.progress += 1 / swapDuration;
+    
+    const { idx1, idx2, progress, startX1, startY1, startX2, startY2 } = swap;
+    const cup1 = cups[idx1];
+    const cup2 = cups[idx2];
+    
+    const t = Math.min(progress, 1);
+    const midY = Math.min(startY1, startY2) - 100;
+    
+    // Cup 1 이동
+    const x1 = startX1 + (startX2 - startX1) * t;
+    const y1 = (1 - t) * (1 - t) * startY1 + 2 * (1 - t) * t * midY + t * t * startY2;
+    cup1.setPosition(x1, y1);
+    
+    // Cup 2 이동
+    const x2 = startX2 + (startX1 - startX2) * t;
+    const y2 = (1 - t) * (1 - t) * startY2 + 2 * (1 - t) * t * midY + t * t * startY1;
+    cup2.setPosition(x2, y2);
+    
+    if (t >= 1.0 && !swap.swapped) {
+      swap.swapped = true;
+      
+      if (showCupNumbers) {
+        console.log(`교환 완료: 컵 ${idx1 + 1} ↔ 컵 ${idx2 + 1}, 공 위치: 컵 ${ballCupIndex + 1}`);
+      }
+      
+      // 컵 객체의 원래 위치 업데이트 (물리적 위치 교환)
+      cup1.originalX = startX2;
+      cup1.originalY = startY2;
+      cup2.originalX = startX1;
+      cup2.originalY = startY1;
+      
+      // 완료된 교환 제거
+      activeSwaps.splice(i, 1);
+    }
+  }
+  
+  if (swapQueue.length === 0 && activeSwaps.length === 0) {
+    isMixing = false;
+    gameState = 'selecting';
+    startBtn.textContent = '컵을 선택하세요!';
+    startBtn.disabled = true;
+    
+    if (flashInterval) {
+      clearInterval(flashInterval);
+      flashInterval = null;
+      canvas.style.opacity = '1';
+      canvas.classList.remove('flash');
+    }
+    
+    // 최종 공 위치 검증 및 수정
+    validateBallPosition();
+  } else {
+    setTimeout(mixCups, 16);
+  }
+}
+
+// 공 위치 검증 함수
+function validateBallPosition() {
+  // ballCupIndex가 유효한 범위 내에 있는지 확인
+  if (ballCupIndex < 0 || ballCupIndex >= cups.length) {
+    console.warn('공 위치가 유효하지 않음, 첫 번째 컵으로 설정');
+    ballCupIndex = 0;
+  }
+  
+  // 디버그 정보 출력
+  if (showCupNumbers) {
+    console.log(`최종 공 위치: 컵 ${ballCupIndex + 1}번`);
+    console.log(`컵 ${ballCupIndex + 1}번의 물리적 위치: (${cups[ballCupIndex].originalX}, ${cups[ballCupIndex].originalY})`);
+  }
+}
+
+// 게임 시작
+function startGame() {
+  if (gameState === 'ready') {
+    gameState = 'mixing';
+    isMixing = true;
+    startBtn.textContent = '섞는 중...';
+    startBtn.disabled = true;
+    
+    // 4단계 깜빡임 효과 - 시각적 방해 요소
+    const config = stageConfig[currentStage];
+    if (config.flash) {
+      // 깜빡임 간격 조절 (밀리초 단위):
+      // - 100ms: 매우 빠른 깜빡임 (현재 설정, 어려움)
+      // - 200ms: 빠른 깜빡임
+      // - 300ms: 보통 깜빡임
+      // - 500ms: 느린 깜빡임 (쉬움)
+      // - 1000ms: 매우 느린 깜빡임 (매우 쉬움)
+      flashInterval = setInterval(() => {
+        canvas.classList.toggle('flash'); // CSS flash 클래스 토글
+      }, 100); // 100ms마다 깜빡임 (매우 빠름)
+    }
+    
+    mixCups();
+  }
+}
+
+function selectCup(cupIndex) {
+  if (gameState !== 'selecting') return;
+  
+  selectedCup = cupIndex;
+  cups[cupIndex].isSelected = true;
+  gameState = 'result';
+  
+  // 결과 확인
+  setTimeout(() => {
+    const config = stageConfig[currentStage];
+    
+    if (cupIndex === ballCupIndex) {
+      // 정답!
+      resultElement.textContent = '정답! 단계 클리어!';
+      resultElement.style.color = '#4CAF50';
+      
+      isInRetryAttempt = false;
+      
+      // 선택지 표시
+      setTimeout(() => {
+        showChoice();
+      }, 1500);
+    } else {
+      // 오답
+      resultElement.textContent = '틀렸습니다!';
+      resultElement.style.color = '#f44336';
+      
+      // 재시도 처리
+      setTimeout(() => {
+        if (retriesLeft > 0 || retriesLeft === Infinity) {
+          if (retriesLeft !== Infinity) {
+            retriesLeft--;
+            retriesUsed++;
+          }
+          isInRetryAttempt = true;
+          
+          resultElement.textContent = '재시도 가능!';
+          setTimeout(() => {
+            initGame();
+          }, 1000);
+        } else {
+          resultElement.textContent = '게임 오버! 처음부터 다시 시작합니다.';
+          setTimeout(() => {
+            currentStage = 1;
+            totalRewards = earnedRewards; // 확정 보상은 유지
+            retriesUsed = 0;
+            isInRetryAttempt = false;
+            initGame();
+          }, 2000);
+        }
+      }, 1500);
+    }
+  }, 500);
+}
+
+// GO/STOP 선택지 표시
+function showChoice() {
+  gameState = 'choice';
+  const config = stageConfig[currentStage];
+  
+  resultElement.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      단계 ${currentStage} 클리어! 보상 +${config.reward}
+    </div>
+  `;
+  
+  // 버튼 생성
+  startBtn.style.display = 'none';
+  resetBtn.style.display = 'none';
+  
+  const controlsDiv = document.querySelector('.controls');
+  
+  if (currentStage < 4) {
+    const goBtn = document.createElement('button');
+    goBtn.className = 'btn go';
+    goBtn.textContent = 'GO (다음 단계)';
+    goBtn.onclick = () => {
+      totalRewards += config.reward;
+      earnedRewards = totalRewards;
+      currentStage++;
+      retriesUsed = 0;
+      isInRetryAttempt = false;
+      cleanupChoiceButtons();
+      initGame();
+    };
+    controlsDiv.appendChild(goBtn);
+  }
+  
+  const stopBtn = document.createElement('button');
+  stopBtn.className = 'btn stop';
+  stopBtn.textContent = 'STOP (보상 받기)';
+  stopBtn.onclick = () => {
+    totalRewards += config.reward;
+    earnedRewards = totalRewards;
+    cleanupChoiceButtons();
+    showFinalRewards();
+  };
+  controlsDiv.appendChild(stopBtn);
+}
+
+function cleanupChoiceButtons() {
+  const controlsDiv = document.querySelector('.controls');
+  const extraButtons = controlsDiv.querySelectorAll('.btn.go, .btn.stop');
+  extraButtons.forEach(btn => btn.remove());
+  startBtn.style.display = 'inline-block';
+  resetBtn.style.display = 'inline-block';
+}
+
+function showFinalRewards() {
+  gameState = 'final';
+  
+  let partialReward = 0;
+  if (isInRetryAttempt && retriesUsed > 0) {
+    if (currentStage === 3) {
+      partialReward = 2;
+    } else if (currentStage === 4) {
+      const maxRetries = stageConfig[4].retries;
+      const retriesRemaining = maxRetries - retriesUsed;
+      
+      if (retriesRemaining === 1) {
+        partialReward = 4; // 1회 사용 후 포기
+      } else if (retriesRemaining === 0) {
+        partialReward = 2; // 2회 사용 후 포기
+      }
+    }
+    
+    if (partialReward > 0) {
+      totalRewards += partialReward;
+      resultElement.innerHTML = `
+        <div style="color: #ffd700;">
+          게임 종료!<br>
+          재시도 중 포기 보상: +${partialReward}<br>
+          최종 총 보상: ${totalRewards}
+        </div>
+      `;
+    } else {
+      resultElement.innerHTML = `
+        <div style="color: #ffd700;">
+          게임 종료!<br>
+          최종 총 보상: ${totalRewards}
+        </div>
+      `;
+    }
+  } else {
+    resultElement.innerHTML = `
+      <div style="color: #ffd700;">
+        게임 종료!<br>
+        최종 총 보상: ${totalRewards}
+      </div>
+    `;
+  }
+  
+  updateUI();
+  
+  setTimeout(() => {
+    currentStage = 1;
+    totalRewards = 0;
+    earnedRewards = 0;
+    retriesUsed = 0;
+    isInRetryAttempt = false;
+    initGame();
+  }, 4000);
+}
+
+// 그리기
+function draw() {
+  // 배경 그라데이션
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, '#667eea');
+  gradient.addColorStop(1, '#764ba2');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // 컵들 그리기
+  cups.forEach(cup => cup.draw());
+  
+  // 게임 상태에 따른 메시지
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  
+  if (gameState === 'ready') {
+    ctx.fillText('게임을 시작하려면 버튼을 누르세요!', canvas.width/2, 80);
+  } else if (gameState === 'mixing') {
+    ctx.fillText('컵들을 주의깊게 보세요!', canvas.width/2, 80);
+  } else if (gameState === 'selecting') {
+    ctx.fillText('공이 있는 컵을 찾으세요!', canvas.width/2, 80);
+  }
+}
+
+// 애니메이션 루프
+function animate() {
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// 이벤트 리스너
+startBtn.addEventListener('click', startGame);
+
+resetBtn.addEventListener('click', () => {
+  if (flashInterval) {
+    clearInterval(flashInterval);
+    flashInterval = null;
+    canvas.style.opacity = '1';
+    canvas.classList.remove('flash');
+  }
+  
+  currentStage = 1;
+  totalRewards = 0;
+  earnedRewards = 0;
+  retriesUsed = 0;
+  isInRetryAttempt = false;
+  cleanupChoiceButtons();
+  initGame();
+});
+
+canvas.addEventListener('click', (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  
+  cups.forEach((cup, index) => {
+    if (cup.contains(x, y)) {
+      selectCup(index);
+    }
+  });
+});
+
+// 키보드 이벤트 리스너 (Alt+M 토글)
+document.addEventListener('keydown', (event) => {
+  if (event.altKey && event.key === 'm') {
+    event.preventDefault();
+    showCupNumbers = !showCupNumbers;
+    
+    // 상태 표시
+    if (showCupNumbers) {
+      console.log('컵 번호 표시: ON');
+    } else {
+      console.log('컵 번호 표시: OFF');
+    }
+  }
+});
+
+// 게임 초기화 및 시작
+initGame();
+animate();
+</script>
+</body>
+</html>
